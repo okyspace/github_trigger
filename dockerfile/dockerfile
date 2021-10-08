@@ -1,0 +1,112 @@
+### Instructions for Docker
+## build image from this dockerfile. E.g. IMAGE_NAME = geovision, IMAGE_TAG = mvo
+# docker build -t <IMAGE_NAME>:<IMAGE_TAG> .
+# e.g. docker build -t geovision:mvo .
+
+## Github
+# https://github.com/Amigoshan/geometry_vision
+
+## After docker build, add in certs to access S3. 
+
+# FROM ubuntu:18.04
+FROM nvidia/cuda:11.4.1-runtime-ubuntu18.04
+SHELL ["/bin/bash", "-c"]
+USER root
+
+
+# ==============================
+# Configurable params
+# ==============================
+RUN env
+ARG GITHUB_USER
+ARG GITHUB_PWD
+RUN env
+
+
+# ==============================
+# Replace with local SG mirrors
+# ==============================
+RUN sed --in-place --regexp-extended "s/(\/\/)(archive\.ubuntu)/\1sg.\2/" /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ Asia/Singapore
+RUN apt-get update
+RUN apt-get install -y --no-install-recommends sudo curl tzdata
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && sudo dpkg-reconfigure -f noninteractive tzdata
+
+
+# ============================== 
+# User Setup
+# ==============================
+# add a user with the same USERID as the user outside the container
+# Requires a docker build argument `USERID`
+ARG USERID=1000
+ENV USERNAME dev
+ENV USER=dev
+RUN useradd -U $USERNAME --uid $USERID -ms /bin/bash \
+ && echo "$USERNAME:$USERNAME" | chpasswd \
+ && adduser $USERNAME sudo \
+ && echo "$USERNAME ALL=NOPASSWD: ALL" >> /etc/sudoers.d/$USERNAME
+RUN sudo chown --recursive $USERNAME:$USERNAME /home
+# Commands below run as the dev user
+USER $USERNAME
+WORKDIR /home
+
+
+# ===============================
+# Install General Tools
+# ===============================
+RUN sudo apt-get update --no-install-recommends \
+&& sudo apt-get install -y \
+	software-properties-common \
+	git  \
+	wget \
+	zip \
+	unzip \
+	gedit \
+	vim \
+	python3-pip \
+	python3-dev \
+	nano
+
+# update pip3 version
+RUN sudo -H pip3 install --upgrade pip
+
+
+# ===============================
+# Install Dependencies
+# ===============================
+# For mvo, use python3
+# check your cuda version and install the appropriate cupy version. https://cupy.dev/
+RUN pip3 install setuptools \
+	pip \
+	numpy \
+	matplotlib \
+	scipy \
+	torch \
+	torchvision \
+	torchaudio \
+	opencv-python \
+	cupy-cuda114 \
+	tensorboard \
+	boto3 
+	# clearml # this should be pip install when this docker container is created
+
+# https://github.com/huyaoyu/WorkFlow
+WORKDIR /home
+RUN git clone -b amigo https://github.com/huyaoyu/WorkFlow.git
+WORKDIR /home/WorkFlow
+RUN sudo python3 setup.py install
+RUN pip3 install visdom numpy pyyaml mkl mkl-include setuptools cmake cffi typing
+
+
+# ==========================
+# Cleanup
+# ==========================
+RUN sudo apt-get clean autoremove
+
+
+# =================================== 
+# Set working directory for container
+# =================================== 
+# /home
+WORKDIR /home
